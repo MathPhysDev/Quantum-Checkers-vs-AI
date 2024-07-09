@@ -10,7 +10,7 @@ This repository contains the code for a React-based game called "Quantum Checker
 - **Kinging:** Pieces that reach the opposite end of the board become Kings and can move diagonally in any direction.
 - **AI Opponent:** The game features a simple AI opponent that makes random moves, prioritizing captures.
 
-**Installation:**
+**Installation (Windows):**
 
 1. **Install Node.js:** Download and install the LTS (Long Term Support) version of Node.js from [https://nodejs.org/](https://nodejs.org/).
 2. **Create a React Project:**
