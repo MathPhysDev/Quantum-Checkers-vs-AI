@@ -1,0 +1,336 @@
+import React, { useState, useEffect, useCallback } from 'react';
+
+const BOARD_SIZE = 8;
+const PLAYER_1 = 1;
+const PLAYER_2 = 2;
+const KING_1 = 3;
+const KING_2 = 4;
+
+const initialBoard = () => {
+  const board = Array(BOARD_SIZE).fill().map(() => Array(BOARD_SIZE).fill(null));
+  for (let i = 0; i < 3; i++) {
+    for (let j = 0; j < BOARD_SIZE; j++) {
+      if ((i + j) % 2 !== 0) board[i][j] = { type: PLAYER_2, probability: 0.5 };
+    }
+  }
+  for (let i = BOARD_SIZE - 3; i < BOARD_SIZE; i++) {
+    for (let j = 0; j < BOARD_SIZE; j++) {
+      if ((i + j) % 2 !== 0) board[i][j] = { type: PLAYER_1, probability: 0.5 };
+    }
+  }
+  return board;
+};
+
+const QuantumCheckersGame = () => {
+  const [board, setBoard] = useState(() => initialBoard());
+  const [currentPlayer, setCurrentPlayer] = useState(PLAYER_1);
+  const [selectedPiece, setSelectedPiece] = useState(null);
+  const [validMoves, setValidMoves] = useState([]);
+  const [gameOver, setGameOver] = useState(false);
+  const [winner, setWinner] = useState(null);
+  const [lastMovedPiece, setLastMovedPiece] = useState(null);
+  const [message, setMessage] = useState('');
+  const [showProbabilities, setShowProbabilities] = useState(false);
+  const [isAITurn, setIsAITurn] = useState(false);
+
+  const isValidPosition = useCallback((row, col) => {
+    return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
+  }, []);
+
+  const getValidMoves = useCallback((row, col) => {
+    const piece = board[row][col];
+    if (!piece) return [];
+
+    const moves = [];
+    const directions = piece.type === PLAYER_1 || piece.type === KING_1 || piece.type === KING_2 ? [[-1, -1], [-1, 1]] : [[1, -1], [1, 1]];
+    if (piece.type === KING_1 || piece.type === KING_2) {
+      directions.push([1, -1], [1, 1]);
+    }
+
+    directions.forEach(([dx, dy]) => {
+      let newRow = row + dx;
+      let newCol = col + dy;
+      if (isValidPosition(newRow, newCol)) {
+        if (!board[newRow][newCol]) {
+          moves.push({ row: newRow, col: newCol });
+        } else if (board[newRow][newCol].type % 2 !== piece.type % 2) {
+          let jumpRow = newRow + dx;
+          let jumpCol = newCol + dy;
+          if (isValidPosition(jumpRow, jumpCol) && !board[jumpRow][jumpCol]) {
+            moves.push({ row: jumpRow, col: jumpCol, capture: { row: newRow, col: newCol } });
+          }
+        }
+      }
+    });
+
+    return moves;
+  }, [board, isValidPosition]);
+
+  const getAllValidMoves = useCallback(() => {
+    const allMoves = [];
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      for (let j = 0; j < BOARD_SIZE; j++) {
+        if (board[i][j] && board[i][j].type % 2 === currentPlayer % 2) {
+          const moves = getValidMoves(i, j);
+          moves.forEach(move => allMoves.push({ from: { row: i, col: j }, to: move }));
+        }
+      }
+    }
+    return allMoves;
+  }, [board, currentPlayer, getValidMoves]);
+
+  const checkGameOver = useCallback(() => {
+    const currentPlayerPieces = board.flat().filter(cell => cell && cell.type % 2 === currentPlayer % 2);
+    if (currentPlayerPieces.length === 0 || getAllValidMoves().length === 0) {
+      setGameOver(true);
+      setWinner(currentPlayer === PLAYER_1 ? PLAYER_2 : PLAYER_1);
+    }
+  }, [board, currentPlayer, getAllValidMoves]);
+
+  useEffect(() => {
+    checkGameOver();
+  }, [board, currentPlayer, checkGameOver]);
+
+  useEffect(() => {
+    if (isAITurn && !gameOver) {
+      const aiMove = setTimeout(() => makeAIMove(), 1000);
+      return () => clearTimeout(aiMove);
+    }
+  }, [isAITurn, gameOver]);
+
+  const handleClick = (row, col) => {
+    if (gameOver || isAITurn) return;
+
+    if (lastMovedPiece) {
+      handleQuantumOperation(row, col);
+    } else if (selectedPiece) {
+      handleMove(row, col);
+    } else {
+      handlePieceSelection(row, col);
+    }
+  };
+
+  const handlePieceSelection = (row, col) => {
+    const piece = board[row][col];
+    if (piece && piece.type % 2 === currentPlayer % 2) {
+      setSelectedPiece({ row, col });
+      setValidMoves(getValidMoves(row, col));
+    }
+  };
+
+  const handleMove = (row, col) => {
+    const move = validMoves.find(m => m.row === row && m.col === col);
+    if (move) {
+      const newBoard = board.map(row => [...row]);
+      const [fromRow, fromCol] = [selectedPiece.row, selectedPiece.col];
+      
+      if (move.capture) {
+        if (Math.random() < board[fromRow][fromCol].probability && Math.random() < board[move.capture.row][move.capture.col].probability) {
+          newBoard[move.capture.row][move.capture.col] = null;
+          newBoard[row][col] = { ...newBoard[fromRow][fromCol] };
+          newBoard[fromRow][fromCol] = null;
+          setMessage("Capture successful!");
+        } else {
+          setMessage("Capture failed. Measuring all pieces...");
+          measureAllPieces(newBoard);
+          setCurrentPlayer(currentPlayer === PLAYER_1 ? PLAYER_2 : PLAYER_1);
+          setBoard(newBoard);
+          setSelectedPiece(null);
+          setValidMoves([]);
+          setIsAITurn(true);
+          return;
+        }
+      } else {
+        newBoard[row][col] = { ...newBoard[fromRow][fromCol] };
+        newBoard[fromRow][fromCol] = null;
+      }
+
+      if ((currentPlayer === PLAYER_1 && row === 0) || (currentPlayer === PLAYER_2 && row === BOARD_SIZE - 1)) {
+        newBoard[row][col].type = currentPlayer === PLAYER_1 ? KING_1 : KING_2;
+      }
+
+      setBoard(newBoard);
+      setSelectedPiece(null);
+      setValidMoves([]);
+      setLastMovedPiece({ row, col });
+      setMessage('Now apply quantum operation to the moved piece');
+    }
+  };
+
+  const measureAllPieces = (newBoard) => {
+    for (let i = 0; i < BOARD_SIZE; i++) {
+      for (let j = 0; j < BOARD_SIZE; j++) {
+        if (newBoard[i][j]) {
+          if (Math.random() > newBoard[i][j].probability) {
+            newBoard[i][j] = null;
+          }
+        }
+      }
+    }
+  };
+
+  const handleQuantumOperation = (row, col) => {
+    if (row === lastMovedPiece.row && col === lastMovedPiece.col) {
+      const newBoard = board.map(row => [...row]);
+      const piece = newBoard[row][col];
+
+      // Apply rotation gate R(π/6)
+      const newProbability = Math.min(1, piece.probability + Math.sin(Math.PI / 6) ** 2);
+      newBoard[row][col] = { ...piece, probability: newProbability };
+
+      setBoard(newBoard);
+      setLastMovedPiece(null);
+      setCurrentPlayer(currentPlayer === PLAYER_1 ? PLAYER_2 : PLAYER_1);
+      setMessage('');
+      setIsAITurn(true);
+    } else {
+      setMessage('You must apply the quantum operation to the piece you just moved');
+    }
+  };
+
+  const makeAIMove = () => {
+    const allMoves = getAllValidMoves();
+    if (allMoves.length === 0) {
+      setGameOver(true);
+      setWinner(PLAYER_1);
+      return;
+    }
+
+    // Simple AI: Choose a random move, preferring captures
+    const captureMoves = allMoves.filter(move => move.to.capture);
+    const chosenMove = captureMoves.length > 0 
+      ? captureMoves[Math.floor(Math.random() * captureMoves.length)]
+      : allMoves[Math.floor(Math.random() * allMoves.length)];
+
+    const newBoard = board.map(row => [...row]);
+    const { from, to } = chosenMove;
+
+    if (to.capture) {
+      if (Math.random() < newBoard[from.row][from.col].probability && Math.random() < newBoard[to.capture.row][to.capture.col].probability) {
+        newBoard[to.capture.row][to.capture.col] = null;
+        newBoard[to.row][to.col] = { ...newBoard[from.row][from.col] };
+        newBoard[from.row][from.col] = null;
+        setMessage("AI capture successful!");
+      } else {
+        setMessage("AI capture failed. Measuring all pieces...");
+        measureAllPieces(newBoard);
+        setCurrentPlayer(PLAYER_1);
+        setBoard(newBoard);
+        setIsAITurn(false);
+        return;
+      }
+    } else {
+      newBoard[to.row][to.col] = { ...newBoard[from.row][from.col] };
+      newBoard[from.row][from.col] = null;
+    }
+
+    // Promote to King if the piece reaches the last row (row 7 for AI)
+    if (to.row === BOARD_SIZE - 1 && newBoard[to.row][to.col].type === PLAYER_2) {
+      newBoard[to.row][to.col].type = KING_2;
+    }
+
+    setBoard(newBoard);
+    setLastMovedPiece({ row: to.row, col: to.col });
+
+    // Apply quantum operation
+    setTimeout(() => {
+      const finalBoard = newBoard.map(row => [...row]);
+      const piece = finalBoard[to.row][to.col];
+      const newProbability = Math.min(1, piece.probability + Math.sin(Math.PI / 6) ** 2);
+      finalBoard[to.row][to.col] = { ...piece, probability: newProbability };
+
+      setBoard(finalBoard);
+      setLastMovedPiece(null);
+      setCurrentPlayer(PLAYER_1);
+      setMessage('AI turn completed');
+      setIsAITurn(false);
+    }, 1000);
+  };
+
+  const resetGame = () => {
+    setBoard(initialBoard());
+    setCurrentPlayer(PLAYER_1);
+    setSelectedPiece(null);
+    setValidMoves([]);
+    setGameOver(false);
+    setWinner(null);
+    setLastMovedPiece(null);
+    setMessage('');
+    setShowProbabilities(false);
+    setIsAITurn(false);
+  };
+
+  const toggleProbabilities = () => {
+    setShowProbabilities(!showProbabilities);
+  };
+
+  if (!board) {
+    return <div>Loading...</div>;
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
+      <h1 className="text-3xl font-bold mb-4">Quantum Checkers vs AI</h1>
+      <div className="bg-yellow-800 p-4 rounded-lg shadow-lg">
+        {board.map((row, rowIndex) => (
+          <div key={rowIndex} className="flex">
+            {row.map((cell, colIndex) => (
+              <div
+                key={colIndex}
+                className={`w-16 h-16 flex items-center justify-center cursor-pointer ${
+                  (rowIndex + colIndex) % 2 === 0 ? 'bg-yellow-200' : 'bg-yellow-600'
+                } ${selectedPiece && selectedPiece.row === rowIndex && selectedPiece.col === colIndex ? 'border-2 border-blue-500' : ''}
+                ${validMoves.some(move => move.row === rowIndex && move.col === colIndex) ? 'bg-green-300' : ''}
+                ${lastMovedPiece && lastMovedPiece.row === rowIndex && lastMovedPiece.col === colIndex ? 'bg-purple-300' : ''}`}
+                onClick={() => handleClick(rowIndex, colIndex)}
+              >
+                {cell && (
+                  <div className="relative w-12 h-12">
+                    <div
+                      className={`w-full h-full rounded-full ${
+                        cell.type === PLAYER_1 || cell.type === KING_1 ? 'bg-red-500' : 'bg-black'
+                      } ${cell.type === KING_1 || cell.type === KING_2 ? 'border-2 border-yellow-300' : ''}`}
+                      style={{ opacity: cell.probability }}
+                    />
+                    {showProbabilities && (
+                      <div className="absolute inset-0 flex items-center justify-center text-white text-xs font-bold">
+                        {(cell.probability * 100).toFixed(0)}%
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 space-y-2">
+        <p className="text-xl font-semibold">
+          {gameOver 
+            ? `Game Over! ${winner === PLAYER_1 ? 'You' : 'AI'} won!` 
+            : `Current Player: ${currentPlayer === PLAYER_1 ? 'You' : 'AI'}`}
+        </p>
+        <p className="text-lg">
+          {isAITurn ? 'AI is thinking...' : (lastMovedPiece ? 'Quantum Operation Phase: Apply R(π/6) gate to the moved piece' : 'Your Move')}
+        </p>
+        {message && <p className="text-lg font-bold">{message}</p>}
+        <button 
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          onClick={toggleProbabilities}
+        >
+          {showProbabilities ? 'Hide Probabilities' : 'Show Probabilities'}
+        </button>
+        {gameOver && (
+          <button 
+            className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            onClick={resetGame}
+          >
+            Play Again
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default QuantumCheckersGame;
