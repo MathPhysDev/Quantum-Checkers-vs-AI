@@ -1,4 +1,4 @@
-## QuantumCheckers vs AI
+## Quantum Checkers vs AI
 
 This repository contains the code for a React-based game called "Quantum Checkers vs AI". This game is a twist on the classic Checkers game, incorporating elements of quantum mechanics.
 
